@@ -136,7 +136,9 @@ module hps_io #(parameter STRLEN=0, PS2DIV=0, WIDE=0, VDNUM=1, PS2WE=0)
 	output reg [24:0] ps2_mouse = 0,
 	output reg [15:0] ps2_mouse_ext = 0, // 15:8 - reserved(additional buttons), 7:0 - wheel movements
 
-	inout      [21:0] gamma_bus
+	inout      [21:0] gamma_bus,
+	
+	input      [15:0] joy_db9
 );
 
 localparam DW = (WIDE) ? 15 : 7;
@@ -452,7 +454,10 @@ always@(posedge clk_sys) begin
 								1: cd_out[15:0]  <= io_din;
 								2: cd_out[31:16] <= io_din;
 								3: cd_out[47:32] <= io_din;
-							endcase 
+							endcase
+					 // Reading DB9 or DB15 joy
+					'h37: io_dout <= joy_db9;
+			
 				endcase
 			end
 		end

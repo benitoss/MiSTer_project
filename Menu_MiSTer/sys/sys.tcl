@@ -46,6 +46,12 @@ set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to USER_IO[*]
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to USER_IO[*]
 set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to USER_IO[*]
 
+set_location_assignment PIN_AE15 -to joy_down_i
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to joy_*
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to joy_down_i
+set_instance_assignment -name CURRENT_STRENGTH_NEW "MAXIMUM CURRENT" -to joy_*
+
+
 #============================================================
 # SDIO_CD or SPDIF_OUT
 #============================================================
@@ -107,7 +113,7 @@ set_instance_assignment -name ALLOW_SYNCH_CTRL_USAGE OFF -to *|SDRAM_*
 #============================================================
 # SPI SD
 #============================================================
-set_location_assignment PIN_AE15 -to SD_SPI_CS
+#set_location_assignment PIN_AE15 -to SD_SPI_CS
 set_location_assignment PIN_AH8  -to SD_SPI_MISO
 set_location_assignment PIN_AG8  -to SD_SPI_CLK
 set_location_assignment PIN_U13  -to SD_SPI_MOSI

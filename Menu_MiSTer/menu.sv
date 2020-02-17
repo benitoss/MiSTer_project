@@ -51,6 +51,8 @@ module emu
 	output        VGA_F1,
 	output [1:0]  VGA_SL,
 
+	input  		 joy_down_i, 
+	
 	output        LED_USER,  // 1 - ON, 0 - OFF.
 
 	// b[1]: 0 - LED status is system status OR'd with b[0]
@@ -123,6 +125,7 @@ module emu
 	input         OSD_STATUS
 );
 
+
 assign ADC_BUS  = 'Z;
 assign USER_OUT = '1;
 assign {UART_RTS, UART_TXD, UART_DTR} = 0;
@@ -156,7 +159,14 @@ assign LED_POWER[0]= FB ? led[2] : act_cnt2[26] ? act_cnt2[25:18] > act_cnt2[7:0
 localparam CONF_STR = {
 	"MENU;;"
 };
+/////////////////////// Joy ////////////////////////////////////
+reg [5:0] joy_db9;  // CB UDLR (negative Logic)
+ 
+ // CB UDLR positive logic
+assign joy_db9   = ~{USER_IN[6],USER_IN[3],USER_IN[5],joy_down_i,USER_IN[1],USER_IN[2] };
+						
 
+ 
 wire forced_scandoubler;
 wire  [1:0] buttons;
 wire [31:0] status;
@@ -174,7 +184,9 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 	.status(status),
 	.status_menumask(cfg),
 	
-	.ps2_key(ps2_key)
+	.ps2_key(ps2_key),
+	
+	.joy_db9(joy_db9)
 );
 
 /*
