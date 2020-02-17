@@ -382,7 +382,7 @@ static const int ev2ps2[] =
 	0x71, //83  KEY_KPDOT
 	NONE, //84  ???
 	NONE, //85  KEY_ZENKAKU
-	NONE, //86  KEY_102ND
+	0x56, //86  KEY_102ND
 	0x78, //87  KEY_F11
 	0x07, //88  KEY_F12
 	NONE, //89  KEY_RO
@@ -991,6 +991,7 @@ enum QUIRK
 	QUIRK_DS4,
 	QUIRK_DS4TOUCH,
 	QUIRK_MADCATZ360,
+	QUIRK_PDSP,
 };
 
 typedef struct
@@ -1027,11 +1028,12 @@ typedef struct
 
 	int      bind;
 	char     devname[32];
-	char     uniq[32];
+	char     id[32];
 	char     name[128];
 } devInput;
 
 static devInput input[NUMDEV] = {};
+static int pd_mode[NUMDEV] = {};
 
 #define BTN_NUM (sizeof(devInput::map) / sizeof(devInput::map[0]))
 
@@ -1778,7 +1780,14 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 
 	if (!input[dev].has_map)
 	{
-		if (!FileLoadJoymap(get_map_name(dev, 0), &input[dev].map, sizeof(input[dev].map)))
+		if (input[dev].quirk == QUIRK_PDSP)
+		{
+			memset(input[dev].map, 0, sizeof(input[dev].map));
+			input[dev].map[SYS_BTN_A]  = 0x01220120;
+			input[dev].map[SPIN_LEFT]  = 0x123;
+			input[dev].map[SPIN_RIGHT] = 0x124;
+		}
+		else if (!FileLoadJoymap(get_map_name(dev, 0), &input[dev].map, sizeof(input[dev].map)))
 		{
 			memset(input[dev].map, 0, sizeof(input[dev].map));
 			if (!is_menu_core())
@@ -1846,7 +1855,9 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 	}
 
 	//mapping
-	if (mapping && (mapping_dev >= 0 || ev->value) && !((mapping_type < 2 || !mapping_button) && (cancel || enter)))
+	if (mapping && (mapping_dev >= 0 || ev->value)
+		&& !((mapping_type < 2 || !mapping_button) && (cancel || enter))
+		&& input[dev].quirk != QUIRK_PDSP)
 	{
 		int idx = 0;
 
@@ -2161,8 +2172,12 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 						int found = 0;
 						for (int i = 0; i < NUMDEV; i++)
 						{
-							found = (input[i].num == num);
-							if (found) break;
+							// paddles overlay on top of other gamepad
+							if ((input[dev].quirk != QUIRK_PDSP) || (input[i].quirk == QUIRK_PDSP))
+							{
+								found = (input[i].num == num);
+								if (found) break;
+							}
 						}
 
 						if (!found)
@@ -2171,6 +2186,15 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 							break;
 						}
 					}
+				}
+
+				if (input[dev].quirk == QUIRK_PDSP)
+				{
+					if (ev->code == 0x120) pd_mode[input[dev].num] = 1;
+				}
+				else
+				{
+					pd_mode[input[dev].num] = 0;
 				}
 
 				if (input[dev].lightgun_req && !user_io_osd_is_visible())
@@ -2445,6 +2469,9 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 		case EV_ABS:
 			if (!user_io_osd_is_visible())
 			{
+				// allow analog either from overlaid paddle or gamepad
+				if (pd_mode[input[dev].num] ^ (input[dev].quirk == QUIRK_PDSP)) break;
+
 				int hrange = (absinfo->maximum - absinfo->minimum) / 2;
 				int dead = hrange/63;
 
@@ -2530,6 +2557,106 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int 
 
 static struct pollfd pool[NUMDEV + 3];
 
+void mergedevs()
+{
+	for (int i = 0; i < NUMDEV; i++)
+	{
+		memset(input[i].id, 0, sizeof(input[i].id));
+	}
+
+	FILE *f = fopen("/proc/bus/input/devices", "r");
+	if (!f)
+	{
+		printf("Failed to open /proc/bus/input/devices\n");
+		return;
+	}
+
+	static char str[1024];
+	char id[32] = {};
+	while (fgets(str, sizeof(str), f))
+	{
+		int len = strlen(str);
+		if (!len) id[0] = 0;
+		else
+		{
+			if (!strncmp("S: ", str, 3))
+			{
+				char *p = strcasestr(str, "/input/");
+				if (p)
+				{
+					*p = 0;
+					p = strrchr(str, '/');
+					if (p)
+					{
+						p++;
+						int len = strlen(p);
+						if (len > 30) p += len - 30;
+						strcpy(id, p);
+					}
+				}
+			}
+			else if (!strncmp("H: ", str, 3) && id[0])
+			{
+				char *handlers = strchr(str, '=');
+				if (handlers)
+				{
+					handlers++;
+					for (int i = 0; i < NUMDEV; i++)
+					{
+						if (pool[i].fd >= 0)
+						{
+							char *dev = strrchr(input[i].devname, '/');
+							if (dev)
+							{
+								char idsp[32];
+								strcpy(idsp, dev+1);
+								strcat(idsp, " ");
+								if (strstr(handlers, idsp)) strcpy(input[i].id, id);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	fclose(f);
+
+	// merge multifunctional devices by id
+	for (int i = 0; i < NUMDEV; i++)
+	{
+		input[i].bind = i;
+		if (input[i].id[0] && !input[i].mouse)
+		{
+			for (int j = 0; j < i; j++)
+			{
+				if (!strcmp(input[i].id, input[j].id))
+				{
+					input[i].bind = j;
+					break;
+				}
+			}
+		}
+	}
+
+	//copy missing fields to mouseX
+	for (int i = 0; i < NUMDEV; i++) if (input[i].mouse)
+	{
+		for (int j = 0; j < NUMDEV; j++) if (!input[j].mouse)
+		{
+			if (!strcmp(input[i].id, input[j].id))
+			{
+				input[i].bind = j;
+				input[i].vid = input[j].vid;
+				input[i].pid = input[j].pid;
+				input[i].quirk = input[j].quirk;
+				memcpy(input[i].name, input[j].name, sizeof(input[i].name));
+				break;
+			}
+		}
+	}
+}
+
 int input_test(int getchar)
 {
 	static char cur_leds = 0;
@@ -2587,6 +2714,7 @@ int input_test(int getchar)
 						pool[n].events = POLLIN;
 						input[n].mouse = !strncmp(de->d_name, "mouse", 5);
 
+						char uniq[32] = {};
 						if (!input[n].mouse)
 						{
 							struct input_id id;
@@ -2595,7 +2723,7 @@ int input_test(int getchar)
 							input[n].vid = id.vendor;
 							input[n].pid = id.product;
 
-							ioctl(pool[n].fd, EVIOCGUNIQ(sizeof(input[n].uniq)), input[n].uniq);
+							ioctl(pool[n].fd, EVIOCGUNIQ(sizeof(uniq)), uniq);
 							ioctl(pool[n].fd, EVIOCGNAME(sizeof(input[n].name)), input[n].name);
 							input[n].led = has_led(pool[n].fd);
 						}
@@ -2646,7 +2774,6 @@ int input_test(int getchar)
 
 						if (input[n].vid == 0x0079 && input[n].pid == 0x1802)
 						{
-							strcpy(input[n].uniq, "Mayflash 1802");
 							input[n].lightgun = 1;
 							input[n].num = 2; // force mayflash mode 1/2 as second joystick.
 						}
@@ -2678,13 +2805,6 @@ int input_test(int getchar)
 							}
 						}
 
-						// Raphnet devices: clear uniq to prevent merging the ports
-						// bliss-box adapters need this as well
-						if (input[n].vid == 0x289b || input[n].vid == 0x16d0)
-						{
-							memset(input[n].uniq, 0, sizeof(input[n].uniq));
-						}
-
 						//Ultimarc lightgun
 						if (input[n].vid == 0xd209 && input[n].pid == 0x1601)
 						{
@@ -2692,10 +2812,10 @@ int input_test(int getchar)
 						}
 
 						//Madcatz Arcade Stick 360
-						if (input[n].vid == 0x0738 && input[n].pid == 0x4758)
-						{
-							input[n].quirk = QUIRK_MADCATZ360;
-						}
+						if (input[n].vid == 0x0738 && input[n].pid == 0x4758) input[n].quirk = QUIRK_MADCATZ360;
+
+						//mr.Spinner
+						if (!strcasecmp(uniq, "MiSTer PD/SP v1")) input[n].quirk = QUIRK_PDSP;
 
 						ioctl(pool[n].fd, EVIOCGRAB, (grabbed | user_io_osd_is_visible()) ? 1 : 0);
 
@@ -2706,70 +2826,10 @@ int input_test(int getchar)
 			}
 			closedir(d);
 
-			// merge multifunctional devices using uniq field
+			mergedevs();
 			for (int i = 0; i < n; i++)
 			{
-				input[i].bind = i;
-				if (input[i].uniq[0] && !input[i].mouse)
-				{
-					for (int j = 0; j < i; j++)
-					{
-						if (!memcmp(input[i].uniq, input[j].uniq, sizeof(input[0].uniq)))
-						{
-							input[i].bind = j;
-							break;
-						}
-					}
-				}
-			}
-
-			//mouseX to eventX mapping
-			FILE *f = fopen("/proc/bus/input/devices", "r");
-			if (f)
-			{
-				static char str[256];
-				while (fgets(str, sizeof(str) - 1, f))
-				{
-					if (!strncmp(str, "H: Handlers=", 12))
-					{
-						for (int i = 0; i < n; i++) if(input[i].mouse)
-						{
-							char *mname = strrchr(input[i].devname, '/');
-							if (mname)
-							{
-								mname++;
-								if (strstr(str + 12, mname))
-								{
-									for (int j = 0; j < n; j++) if (!input[j].mouse)
-									{
-										char *ename = strrchr(input[j].devname, '/');
-										if (ename)
-										{
-											ename++;
-											if (strstr(str + 12, ename))
-											{
-												input[i].bind = j;
-												input[i].vid = input[j].vid;
-												input[i].pid = input[j].pid;
-												input[i].quirk = input[j].quirk;
-												memcpy(input[i].name, input[j].name, sizeof(input[i].name));
-												memcpy(input[i].uniq, input[j].uniq, sizeof(input[i].uniq));
-												break;
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-
-				fclose(f);
-			}
-
-			for (int i = 0; i < n; i++)
-			{
-				printf("opened %d(%2d): %s (%04x:%04x) %d \"%s\" \"%s\"\n", i, input[i].bind, input[i].devname, input[i].vid, input[i].pid, input[i].quirk, input[i].uniq, input[i].name);
+				printf("opened %d(%2d): %s (%04x:%04x) %d \"%s\" \"%s\"\n", i, input[i].bind, input[i].devname, input[i].vid, input[i].pid, input[i].quirk, input[i].id, input[i].name);
 			}
 		}
 		cur_leds |= 0x80;
@@ -3089,7 +3149,7 @@ int input_test(int getchar)
 								if (!noabs) input_cb(&ev, &absinfo, i);
 
 								//sumulate digital directions from analog
-								if (ev.type == EV_ABS && !(mapping && mapping_type <= 1 && mapping_button < -4) && !(ev.code <= 1 && input[dev].lightgun))
+								if (ev.type == EV_ABS && !(mapping && mapping_type <= 1 && mapping_button < -4) && !(ev.code <= 1 && input[dev].lightgun) && input[dev].quirk != QUIRK_PDSP)
 								{
 									input_absinfo *pai = 0;
 									uint8_t axis_edge = 0;

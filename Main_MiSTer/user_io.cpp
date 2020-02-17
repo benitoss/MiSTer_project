@@ -44,7 +44,7 @@ uint8_t joy_button2 =0;
 uint8_t joy_up = 0;
 uint8_t joy_down = 0;
 uint8_t joy_left = 0;
-uint8_t joy_right = 0;
+uint8_t joy_right = 0; 
 
 static uint8_t vol_att = 0;
 unsigned long vol_set_timeout = 0;
@@ -978,9 +978,12 @@ void user_io_digital_joystick(unsigned char joystick, uint32_t map, int newdir)
 		return;
 	}
 
+	static int use32 = 0;
+	use32 |= map >> 16;
+
 	spi_uio_cmd_cont((joy < 2) ? (UIO_JOYSTICK0 + joy) : (UIO_JOYSTICK2 + joy - 2));
 	spi_w(map);
-	if(joy_bcount>12) spi_w(map>>16);
+	if(use32) spi_w(map>>16);
 	DisableIO();
 
 	if (!is_minimig() && joy_transl == 1 && newdir)
@@ -1639,78 +1642,8 @@ uint16_t check_DB9_change()
 		}
 	}
 	contador ++;
-	
-	
-	/* if (joy != last_joy){
-		last_joy= joy;
-		//print_joy(joy);
-		if (joy && osd_is_visible ){
-			printf("sending DB9 signal: 0x%02hhx\n", joy);
-			if (joy == JOY_UP ){
-				user_io_kbd(KEY_UP, 1);
-				//user_io_kbd(KEY_UP, 0);
-			} else if (joy == JOY_DOWN ){
-				user_io_kbd(KEY_DOWN, 1);
-				//user_io_kbd(KEY_DOWN, 0);
-			} else if (joy == JOY_LEFT ){
-				user_io_kbd(KEY_LEFT, 1);
-				//user_io_kbd(KEY_LEFT, 0);
-			} else if (joy == JOY_RIGHT ){
-				user_io_kbd(KEY_RIGHT, 1);
-				//
-			} else if (joy == BUTTON1 ){
-				user_io_kbd(KEY_ENTER, 1);
-				//user_io_kbd(KEY_ENTER, 0);
-			}			
-		}
-		contador= 10000000000;
-	} else {
-		if (contador==100){
-			user_io_kbd(KEY_UP, 0);
-			user_io_kbd(KEY_DOWN, 0);
-			user_io_kbd(KEY_LEFT, 0);
-			user_io_kbd(KEY_RIGHT, 0);
-			user_io_kbd(KEY_ENTER, 0);
-		}
-		contador--;
-		if (contador==0){
-			//print_joy(last_joy);
-			if (last_joy && osd_is_visible ){
-				printf("sending DB9 signal: 0x%02hhx\n", last_joy);
-			}
-			contador= 200;
-		}
-	} */
-	
-	/*
-	if (joy){  
-		//uinp_send_key(KEY_DOWN, 1);
-		//printf("sending DB9 signal: 0x%02hhx  \n", joy);
-		switch (joy){
-			case 0x01:  //RIGHT
-				printf("sending DB9 signal: RIGHT\n");
-				break;
-			case 0x02:  //LEFT
-				printf("sending DB9 signal: LEFT\n");
-				break;
-			case 0x04:  //DOWN
-				printf("sending DB9 signal: DOWN\n");
-				break;
-			case 0x08:  //UP
-				printf("sending DB9 signal: UP\n");
-				break;
-			case 0x10:  //BUTTON1
-				printf("sending DB9 signal: BUTTON 1\n");
-				break;
-			case 0x20:  //BUTTON2
-				printf("sending DB9 signal: BUTTON 2\n");
-				break;
-		}
-	}
-	*/
 	return joy;
-}
-
+} 
 
 static void check_status_change()
 {
@@ -2270,7 +2203,7 @@ void user_io_poll()
 	}
 
 	user_io_send_buttons(0);
-	check_DB9_change();
+    check_DB9_change(); 
 
 	if (is_minimig())
 	{
@@ -2393,7 +2326,6 @@ void user_io_poll()
 		*/
 
 		check_status_change();
-		
 	}
 
 	// sd card emulation
