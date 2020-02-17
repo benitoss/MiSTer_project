@@ -75,6 +75,7 @@
 #define UIO_CD_GET      0x34
 #define UIO_CD_SET      0x35
 #define UIO_INFO_GET    0x36
+#define UIO_DB9_GET     0x37
 
 // codes as used by 8bit for file loading from OSD
 #define UIO_FILE_TX     0x53
