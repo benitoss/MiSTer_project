@@ -44,7 +44,7 @@ uint8_t joy_button2 =0;
 uint8_t joy_up = 0;
 uint8_t joy_down = 0;
 uint8_t joy_left = 0;
-uint8_t joy_right = 0; 
+uint8_t joy_right = 0;  
 
 static uint8_t vol_att = 0;
 unsigned long vol_set_timeout = 0;
@@ -951,7 +951,7 @@ int user_io_get_joyswap()
 
 void user_io_analog_joystick(unsigned char joystick, char valueX, char valueY)
 {
-	uint8_t joy = (joystick>1 || !joyswap) ? joystick : joystick^1;
+	uint8_t joy = (joystick > 1 || !joyswap) ? joystick : (joystick >= 7) ? (joystick ^ 16) : (joystick ^ 1);
 
 	if (core_type == CORE_TYPE_8BIT)
 	{
@@ -1643,7 +1643,7 @@ uint16_t check_DB9_change()
 	}
 	contador ++;
 	return joy;
-} 
+}  
 
 static void check_status_change()
 {
@@ -2203,7 +2203,7 @@ void user_io_poll()
 	}
 
 	user_io_send_buttons(0);
-    check_DB9_change(); 
+	check_DB9_change();
 
 	if (is_minimig())
 	{
